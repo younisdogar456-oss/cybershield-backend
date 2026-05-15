@@ -1,10 +1,22 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 import requests
+import os
 from urllib.parse import urlparse
 
 app = FastAPI()
 
+# =========================
+# CORS FIX
+# =========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # بعد میں specific domain لگا سکتے ہیں
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # =========================
 # INPUT MODEL
@@ -22,12 +34,25 @@ def get_domain(url: str):
 
 
 # =========================
+# API KEYS
+# =========================
+
+# PASTE IN RENDER ENVIRONMENT
+WHOIS_API_KEY = os.getenv("WHOIS_API_KEY")
+
+# PASTE IN RENDER ENVIRONMENT
+VT_API_KEY = os.getenv("VT_API_KEY")
+
+# PASTE IN RENDER ENVIRONMENT
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+
+# =========================
 # WHOIS CHECK
 # =========================
 def check_whois(domain: str):
-    API_KEY = "at_eXQ3BNRKyD1L0j5dyKPSFWQ1ihikK"
 
-    url = f"https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey={API_KEY}&domainName={domain}&outputFormat=JSON"
+    url = f"https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey={WHOIS_API_KEY}&domainName={domain}&outputFormat=JSON"
 
     try:
         res = requests.get(url, timeout=10)
@@ -41,12 +66,11 @@ def check_whois(domain: str):
 # VIRUSTOTAL CHECK
 # =========================
 def check_virustotal(url_value: str):
-    API_KEY = "2dc1f8344737680c7963bf4a059121484fae39b5c2e8afe4541dee6756af67d3"
 
     try:
         submit = requests.post(
             "https://www.virustotal.com/api/v3/urls",
-            headers={"x-apikey": API_KEY},
+            headers={"x-apikey": VT_API_KEY},
             data={"url": url_value}
         )
 
@@ -54,7 +78,7 @@ def check_virustotal(url_value: str):
 
         result = requests.get(
             f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
-            headers={"x-apikey": API_KEY}
+            headers={"x-apikey": VT_API_KEY}
         )
 
         stats = result.json()["data"]["attributes"]["stats"]
@@ -76,9 +100,6 @@ def scan(data: URLRequest):
     score = 100
     issues = []
 
-    # -------------------------
-    # RULE CHECK
-    # -------------------------
     keywords = ["hack", "free", "login", "verify", "win", "bitcoin"]
 
     for k in keywords:
@@ -90,9 +111,6 @@ def scan(data: URLRequest):
         score -= 15
         issues.append("No HTTPS security")
 
-    # -------------------------
-    # WHOIS
-    # -------------------------
     age = check_whois(domain)
 
     if age is not None:
@@ -105,22 +123,17 @@ def scan(data: URLRequest):
     else:
         issues.append("WHOIS data not available")
 
-    # -------------------------
-    # VIRUSTOTAL
-    # -------------------------
     vt = check_virustotal(url)
 
     if vt:
         if vt.get("malicious", 0) > 0:
             score -= 50
             issues.append("Malicious detected")
+
         if vt.get("suspicious", 0) > 0:
             score -= 20
             issues.append("Suspicious activity detected")
 
-    # -------------------------
-    # FINAL SCORE
-    # -------------------------
     if score < 0:
         score = 0
 
@@ -137,4 +150,4 @@ def scan(data: URLRequest):
         "score": score,
         "status": status,
         "issues": issues
-      }
+    }
